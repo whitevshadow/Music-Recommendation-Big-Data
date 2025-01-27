@@ -1,0 +1,146 @@
+import streamlit as st
+from pyspark.sql import SparkSession
+from pyspark.ml.recommendation import ALS
+from pyspark.ml.feature import StringIndexer
+from pyspark.sql.functions import col, lit, explode, when
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+import os
+import requests
+
+# Set Spark Local IP if needed
+os.environ['SPARK_LOCAL_IP'] = '192.168.0.103'
+
+def recommend_music(song_name, song_data_path, user_data_path, num_recommendations=21):
+    # Create a Spark session
+    spark = SparkSession.builder \
+        .appName("Music Recommendation System") \
+        .config("spark.executor.memory", "8g") \
+        .config("spark.ui.port", "4057") \
+        .config("spark.ui.enabled", "false") \
+        .config("spark.driver.memory", "8g") \
+        .config("spark.driver.bindAddress", "127.0.0.1") \
+        .config("spark.driver.host", "127.0.0.1") \
+        .getOrCreate()
+
+    # Set logging level to suppress warnings
+    spark.sparkContext.setLogLevel("ERROR")
+
+    # Load the JSON files
+    song_data_df = spark.read.json(song_data_path)
+    user_data_df = spark.read.json(user_data_path)
+
+    # Ensure song_id is treated as a string
+    song_data_df = song_data_df.withColumn("song_id", col("song_id").cast(StringType()))
+
+    # Flatten the user_data_df if songs column is an array of structs
+    if user_data_df.schema["songs"].dataType.typeName() == "array":
+        user_data_df = user_data_df.withColumn("song", explode(col("songs"))).select("user_id",
+                                                                                     col("song.song_id").alias(
+                                                                                         "song_id"))
+
+    # Create triplets_df with listen_count
+    triplets_df = user_data_df.withColumn("listen_count", lit(1))
+
+    # Convert user_id and song_id to numeric IDs, handle unseen labels
+    user_indexer = StringIndexer(inputCol="user_id", outputCol="user_index", handleInvalid="keep")
+    song_indexer = StringIndexer(inputCol="song_id", outputCol="song_index", handleInvalid="keep")
+
+    # Fit and transform the data to convert IDs to numeric indices
+    user_indexer_model = user_indexer.fit(triplets_df)
+    song_indexer_model = song_indexer.fit(triplets_df)
+
+    triplets_df = user_indexer_model.transform(triplets_df)
+    triplets_df = song_indexer_model.transform(triplets_df)
+
+    # Prepare the data for the ALS.py model
+    (training_df, test_df) = triplets_df.randomSplit([0.8, 0.2])
+
+    # Initialize the ALS.py model
+    als = ALS(
+        userCol="user_index",
+        itemCol="song_index",
+        ratingCol="listen_count",
+        coldStartStrategy="drop"
+    )
+
+    # Fit the model
+    model = als.fit(training_df)
+
+    # Generate top N recommendations for all users
+    user_recs = model.recommendForAllUsers(num_recommendations)
+
+    # Find the song_index for the given song_name
+    song_index_df = song_data_df.filter(col("title").contains(song_name))
+
+    if song_index_df.count() > 0:
+        song_index = song_indexer_model.transform(song_index_df).select("song_index").first()[0]
+
+        # Filter recommendations for the specific song_index
+        user_recs_filtered = user_recs.filter(col("user_index") == song_index)
+
+        # Extract recommendations
+        recommendations = user_recs_filtered.select(explode("recommendations").alias("recommendation")).collect()
+
+        if recommendations:
+            # Convert to DataFrame
+            recommendations_df = spark.createDataFrame(
+                [(rec.recommendation.song_index, rec.recommendation.rating) for rec in recommendations],
+                ["song_index", "rating"])
+
+            # Join with the original song_data_df using a mapping DataFrame
+            song_index_mapping = song_indexer_model.transform(song_data_df)
+            result_df = recommendations_df.join(song_index_mapping, on="song_index").select("song_id", "title",
+                                                                                            "artist_name", "rating")
+
+            return result_df.collect()
+        else:
+            return []
+    else:
+        return []
+
+    spark.stop()
+
+def fetch_album_cover(song_name):
+    token = ('BQCgaQdvwEvIOEKK1AUDkLlgrRURclMrnPbZGmENUparPHRo4SjDHCt8BFBybTU5L_Ode-FdScpTQnpzuhyObN6zDrLvSkZ55XdJUrebKSd4ZiK6jAK9cEdQjFPe3969UiuWynO5cb9u6MVNIAtmn4y42vIu7_kcTcd5HnvxDbCuweuY520WXjcqRSEej-RiGxPZU4BlSrkNM2bM7AltKEaAeasFAhi1G1FEvo969hr1fEVcBvDQryVJEUlWsNkBRajMZDSSu9Bo0qVUvUhJORzpbOM29DUa')
+    url = f"https://api.spotify.com/v1/search?q={song_name}&type=track"
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for non-2xx status codes
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching album cover: {e}")
+        return None
+
+    # Extract the first track's album cover
+    if 'tracks' in data and 'items' in data['tracks'] and data['tracks']['items']:
+        return data['tracks']['items'][0]['album']['images'][0]['url']
+    else:
+        print("Didn't find the album cover or unexpected response structure")
+        return None
+
+def main():
+    st.title("Music Recommendation System")
+    song_name = st.text_input("Enter the song name for recommendations")
+    song_data_path = "song_data_json"  # Path to the JSON directory for song data
+    user_data_path = "user_data_json"  # Path to the JSON directory for user data
+
+    if st.button("Get Recommendations"):
+        recommendations = recommend_music(song_name, song_data_path, user_data_path)
+        if not recommendations:
+            st.write("No recommendations found for the given song name.")
+        else:
+            cols = st.columns(3)
+            for i, rec in enumerate(recommendations):
+                with cols[i % 3]:
+                    st.write(f"**Title:** {rec.title}")
+                    st.write(f"**Artist:** {rec.artist_name}")
+                    cover_url = fetch_album_cover(rec.title)
+                    if cover_url:
+                        st.image(cover_url)
+
+if __name__ == "__main__":
+    main()

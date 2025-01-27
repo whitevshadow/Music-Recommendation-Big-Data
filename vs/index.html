@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Song Data Visualizations with Legends</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .chart {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .chart div {
+            margin: 10px;
+        }
+        .legend {
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Song Data Visualizations with Legends</h1>
+<div class="chart">
+    <div id="bar-chart"></div>
+    <div id="pie-chart"></div>
+    <div id="line-chart"></div>
+    <div id="scatter-plot"></div>
+</div>
+
+<script>
+    // Load data from CSV
+    d3.csv('song_data.csv').then(function(data) {
+
+        // Convert year to numeric and filter out invalid years
+        data.forEach(function(d) {
+            d.year = +d.year;
+        });
+
+        // -------------------- Bar Chart: Number of Songs per Year --------------------
+        const barChartSvg = d3.select("#bar-chart")
+            .append("svg")
+            .attr("width", 500)
+            .attr("height", 300);
+
+        const yearData = d3.rollup(data, v => v.length, d => d.year);
+        const years = Array.from(yearData, ([key, value]) => ({ year: key, count: value })).filter(d => d.year > 0);
+
+        const xScale = d3.scaleBand()
+            .domain(years.map(d => d.year))
+            .range([0, 400])
+            .padding(0.1);
+
+        const yScale = d3.scaleLinear()
+            .domain([0, d3.max(years, d => d.count)])
+            .range([250, 0]);
+
+        barChartSvg.append("g")
+            .attr("transform", "translate(50,250)")
+            .call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+
+        barChartSvg.append("g")
+            .attr("transform", "translate(50,0)")
+            .call(d3.axisLeft(yScale));
+
+        barChartSvg.selectAll(".bar")
+            .data(years)
+            .enter()
+            .append("rect")
+            .attr("x", d => xScale(d.year) + 50)
+            .attr("y", d => yScale(d.count))
+            .attr("width", xScale.bandwidth())
+            .attr("height", d => 250 - yScale(d.count))
+            .attr("fill", "steelblue");
+
+        // Add legend for the bar chart
+        barChartSvg.append("text")
+            .attr("x", 250)
+            .attr("y", 290)
+            .attr("text-anchor", "middle")
+            .style("font-size", "14px")
+            .text("Number of Songs per Year");
+
+        // -------------------- Pie Chart: Distribution by Artist --------------------
+        const artistData = d3.rollup(data, v => v.length, d => d.artist_name);
+        const artists = Array.from(artistData, ([key, value]) => ({ artist: key, count: value }));
+
+        const pieChartSvg = d3.select("#pie-chart")
+            .append("svg")
+            .attr("width", 300)
+            .attr("height", 300)
+            .append("g")
+            .attr("transform", "translate(150,150)");
+
+        const pie = d3.pie()
+            .value(d => d.count)(artists.slice(0, 10)); // Limit to top 10 artists for readability
+
+        const arc = d3.arc()
+            .innerRadius(0)
+            .outerRadius(100);
+
+        pieChartSvg.selectAll('path')
+            .data(pie)
+            .enter()
+            .append('path')
+            .attr('d', arc)
+            .attr('fill', (d, i) => d3.schemeTableau10[i % 10]);
+
+        // Add legend for pie chart
+        const pieLegend = d3.select("#pie-chart").append("svg")
+            .attr("width", 300)
+            .attr("height", 150);
+
+        const legendG = pieLegend.selectAll(".legend")
+            .data(pie)
+            .enter().append("g")
+            .attr("transform", (d, i) => `translate(0,${i * 20})`);
+
+        legendG.append("rect")
+            .attr("x", 10)
+            .attr("y", 10)
+            .attr("width", 10)
+            .attr("height", 10)
+            .attr("fill", (d, i) => d3.schemeTableau10[i % 10]);
+
+        legendG.append("text")
+            .attr("x", 30)
+            .attr("y", 20)
+            .text(d => d.data.artist);
+
+        // -------------------- Line Chart: Song Releases Over Time --------------------
+        const lineChartSvg = d3.select("#line-chart")
+            .append("svg")
+            .attr("width", 500)
+            .attr("height", 300);
+
+        const line = d3.line()
+            .x(d => xScale(d.year) + 50)
+            .y(d => yScale(d.count));
+
+        lineChartSvg.append("g")
+            .attr("transform", "translate(50,250)")
+            .call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+
+        lineChartSvg.append("g")
+            .attr("transform", "translate(50,0)")
+            .call(d3.axisLeft(yScale));
+
+        lineChartSvg.append("path")
+            .datum(years)
+            .attr("fill", "none")
+            .attr("stroke", "red")
+            .attr("stroke-width", 1.5)
+            .attr("d", line);
+
+        // Add legend for the line chart
+        lineChartSvg.append("text")
+            .attr("x", 250)
+            .attr("y", 290)
+            .attr("text-anchor", "middle")
+            .style("font-size", "14px")
+            .text("Song Releases Over Time");
+
+        // -------------------- Scatter Plot: Number of Songs by Artist --------------------
+        const scatterSvg = d3.select("#scatter-plot")
+            .append("svg")
+            .attr("width", 500)
+            .attr("height", 300);
+
+        const artistXScale = d3.scaleBand()
+            .domain(artists.map(d => d.artist))
+            .range([0, 400])
+            .padding(0.1);
+
+        const artistYScale = d3.scaleLinear()
+            .domain([0, d3.max(artists, d => d.count)])
+            .range([250, 0]);
+
+        scatterSvg.append("g")
+            .attr("transform", "translate(50,250)")
+            .call(d3.axisBottom(artistXScale).tickFormat(d => d.slice(0, 5) + '...').tickSize(0))
+            .selectAll("text")
+            .attr("transform", "rotate(90)")
+            .style("text-anchor", "start");
+
+        scatterSvg.append("g")
+            .attr("transform", "translate(50,0)")
+            .call(d3.axisLeft(artistYScale));
+
+        scatterSvg.selectAll("circle")
+            .data(artists)
+            .enter()
+            .append("circle")
+            .attr("cx", d => artistXScale(d.artist) + 50)
+            .attr("cy", d => artistYScale(d.count))
+            .attr("r", 5)
+            .attr("fill", "green");
+
+        // Add legend for the scatter plot
+        scatterSvg.append("text")
+            .attr("x", 250)
+            .attr("y", 290)
+            .attr("text-anchor", "middle")
+            .style("font-size", "14px")
+            .text("Number of Songs by Artist");
+
+    });
+</script>
+</body>
+</html>
