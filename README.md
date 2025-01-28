@@ -25,6 +25,8 @@ song_data.csv: Contains metadata for songs (e.g., song_id, title, release year, 
 user_data.csv: Captures user interactions with songs (e.g., user_id, song_id, listen_count).
 After processing, these datasets are converted into JSON format for efficient querying and retrieval during recommendation generation.
 
+![image](https://github.com/user-attachments/assets/ee409a48-e04a-42d2-84d8-cda8701b730a)
+
 
 **Recommendation Techniques**
 
@@ -37,6 +39,11 @@ The project also addresses various challenges in processing user-generated conte
 Handling regional language data and SMS-style language.
 Classifying reviews as positive or negative using SentiWordNet.
 Identifying irrelevant or spam reviews.
+
+![Screenshot 2024-08-30 124556](https://github.com/user-attachments/assets/e2fc37fe-bc3b-4793-b2df-d923a0b2f888)
+
+
+
 
 **Conclusion**
 
