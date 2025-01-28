@@ -27,6 +27,7 @@ After processing, these datasets are converted into JSON format for efficient qu
 
 ![image](https://github.com/user-attachments/assets/ee409a48-e04a-42d2-84d8-cda8701b730a)
 
+![Screenshot-from-2024-10-23-12-25-52](https://github.com/user-attachments/assets/5f8e074d-00ed-408b-a571-78e6adb6af5d)
 
 **Recommendation Techniques**
 
